@@ -51,41 +51,34 @@ if df.empty:
     st.warning("⚠️ Aucune donnée trouvée via l’API ou données invalides.")
     st.stop()
 
-# Débogage : Afficher les 5 premières lignes pour vérification
-st.write("Aperçu des données chargées :", df.head())  # Peut être supprimé après test
-
 # ---- 5) Filtres ----
-col_sexe, col_ville, col_periode = st.columns(3)
+st.sidebar.header("📊 Filtres")
 
 # 5.1 Filtre par sexe
 sexe_options = ["Tous"] + sorted(df["sexe"].unique())
-sexe_selected = col_sexe.selectbox("🧑‍🤝‍🧑 Filtrer par Sexe", sexe_options)
+sexe_selected = st.sidebar.selectbox("🧑‍🤝‍🧑 Filtrer par Sexe", sexe_options)
 
 # 5.2 Filtre par ville (gestion des valeurs NaN et vérification si la colonne existe)
 if "ville" in df.columns and not df["ville"].empty:
     ville_options = ["Toutes"] + sorted(df["ville"].dropna().unique())
 else:
     ville_options = ["Toutes"]
-
-ville_selected = col_ville.selectbox("🏙️ Filtrer par Ville", ville_options)
+ville_selected = st.sidebar.selectbox("🏙️ Filtrer par Ville", ville_options)
 
 # 5.3 Filtre par période (date range)
 min_date = df["created_at"].min().date()
 max_date = df["created_at"].max().date()
-date_range = col_periode.date_input("📅 Filtrer par Période", [min_date, max_date])
+date_range = st.sidebar.date_input("📅 Filtrer par Période", [min_date, max_date])
 
 # ---- 6) Application des filtres ----
 filtered_df = df.copy()
 
-# 6.1 Filtre sexe
 if sexe_selected != "Tous":
     filtered_df = filtered_df[filtered_df["sexe"] == sexe_selected]
 
-# 6.2 Filtre ville
 if ville_selected != "Toutes":
     filtered_df = filtered_df[filtered_df["ville"] == ville_selected]
 
-# 6.3 Filtre période
 start_date = pd.to_datetime(date_range[0])
 end_date = pd.to_datetime(date_range[1]) + timedelta(hours=23, minutes=59, seconds=59)
 
@@ -95,6 +88,7 @@ filtered_df = filtered_df[
 ]
 
 # ---- 7) KPIs ----
+st.markdown("### 📌 Indicateurs Clés (KPIs)")
 kpi_col1, kpi_col2, kpi_col3 = st.columns(3)
 
 total_contacts = len(filtered_df)
@@ -111,22 +105,24 @@ with kpi_col3:
     st.metric(label="♂️ Nombre d'Hommes", value=total_hommes)
 
 # ---- 8) Graphiques: Pie & Bar ----
+st.markdown("### 📊 Répartition des Utilisateurs")
+
 col_pie, col_bar = st.columns(2)
 
 with col_pie:
-    st.subheader("🧑‍🤝‍🧑 Répartition des Utilisateurs par Sexe")
+    st.subheader("🧑‍🤝‍🧑 Répartition par Sexe")
     sexe_counts_filtered = filtered_df["sexe"].value_counts()
     fig_pie = go.Figure(go.Pie(labels=sexe_counts_filtered.index, values=sexe_counts_filtered.values))
     st.plotly_chart(fig_pie, use_container_width=True)
 
 with col_bar:
-    st.subheader("🏙️ Répartition des Utilisateurs par Ville")
+    st.subheader("🏙️ Répartition par Ville")
     ville_counts_filtered = filtered_df["ville"].value_counts()
     fig_bar = go.Figure(go.Bar(x=ville_counts_filtered.index, y=ville_counts_filtered.values))
     st.plotly_chart(fig_bar, use_container_width=True)
 
-# ---- 9) Line Chart - Évolution des Inscriptions ----
-st.subheader("📈 Évolution des Inscriptions")
+# ---- 9) Évolution des Inscriptions ----
+st.markdown("### 📈 Évolution des Inscriptions")
 if not filtered_df.empty:
     if "id" in filtered_df.columns:
         monthly_counts = filtered_df.resample("M", on="created_at")["id"].count()
@@ -139,5 +135,5 @@ else:
     st.info("Aucune donnée à afficher pour la période/les filtres sélectionnés.")
 
 # ---- 10) Tableau final ----
-st.subheader("📋 Liste des Utilisateurs Filtrés")
+st.markdown("### 📋 Liste des Utilisateurs Filtrés")
 st.dataframe(filtered_df, use_container_width=True)
