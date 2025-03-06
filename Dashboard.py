@@ -11,7 +11,7 @@ st.set_page_config(
 )
 
 # ---- 2) Chargement des données via API ----
-@st.cache_data
+@st.cache_data(ttl=60)  # Cache avec mise à jour toutes les 60 secondes
 def load_data():
     try:
         url = "https://baseecoleback.parcoursnum.net/api/candidats"
@@ -19,37 +19,28 @@ def load_data():
         response.raise_for_status()
         data = response.json()
         df = pd.DataFrame(data)
-        return df
-    except Exception as e:
-        st.error(f"Erreur lors du chargement des données : {e}")
-        return pd.DataFrame()
 
-        # 2) Conversion en DataFrame
-        df = pd.DataFrame(data)
+        if df.empty:
+            return df  # Retourne un DataFrame vide pour éviter les erreurs
 
-        # 3) Conversion de la colonne "created_at" en datetime
+        # 1) Conversion de la colonne "created_at" en datetime
         df["created_at"] = pd.to_datetime(df["created_at"], errors="coerce")
+        df["created_at"] = df["created_at"].dt.tz_localize(None)  # Suppression du fuseau horaire
 
-        # 4) Suppression du fuseau horaire pour éviter les conflits
-        df["created_at"] = df["created_at"].dt.tz_localize(None)
-
-        # 5) Normalisation de la colonne `sexe`
-        df["sexe"] = df["sexe"].astype(str).str.lower()
-        df["sexe"] = df["sexe"].replace({
-            "f": "Femme", "femme": "Femme",
-            "female": "Femme",
-            "m": "Homme", "homme": "Homme",
-            "male": "Homme",
+        # 2) Normalisation de la colonne `sexe`
+        df["sexe"] = df["sexe"].astype(str).str.lower().replace({
+            "f": "Femme", "femme": "Femme", "female": "Femme",
+            "m": "Homme", "homme": "Homme", "male": "Homme"
         })
         df.loc[~df["sexe"].isin(["Femme", "Homme"]), "sexe"] = "Inconnu"
 
-        # 6) Normalisation de la colonne "ville"
-        df["ville"] = df["ville"].fillna("Inconnue")
+        # 3) Normalisation de la colonne "ville"
+        df["ville"] = df["ville"].fillna("Inconnue")  # Remplace NaN par "Inconnue"
 
         return df
 
     except Exception as e:
-        st.error(f"Erreur de chargement des données : {e}")
+        st.error(f"Erreur lors du chargement des données : {e}")
         return pd.DataFrame()
 
 # ---- 3) Lecture des données ----
@@ -60,6 +51,9 @@ if df.empty:
     st.warning("⚠️ Aucune donnée trouvée via l’API ou données invalides.")
     st.stop()
 
+# Débogage : Afficher les 5 premières lignes pour vérification
+st.write("Aperçu des données chargées :", df.head())  # Peut être supprimé après test
+
 # ---- 5) Filtres ----
 col_sexe, col_ville, col_periode = st.columns(3)
 
@@ -67,8 +61,12 @@ col_sexe, col_ville, col_periode = st.columns(3)
 sexe_options = ["Tous"] + sorted(df["sexe"].unique())
 sexe_selected = col_sexe.selectbox("🧑‍🤝‍🧑 Filtrer par Sexe", sexe_options)
 
-# 5.2 Filtre par ville
-ville_options = ["Toutes"] + sorted(df["ville"].unique())
+# 5.2 Filtre par ville (gestion des valeurs NaN et vérification si la colonne existe)
+if "ville" in df.columns and not df["ville"].empty:
+    ville_options = ["Toutes"] + sorted(df["ville"].dropna().unique())
+else:
+    ville_options = ["Toutes"]
+
 ville_selected = col_ville.selectbox("🏙️ Filtrer par Ville", ville_options)
 
 # 5.3 Filtre par période (date range)
@@ -92,7 +90,7 @@ start_date = pd.to_datetime(date_range[0])
 end_date = pd.to_datetime(date_range[1]) + timedelta(hours=23, minutes=59, seconds=59)
 
 filtered_df = filtered_df[
-    (filtered_df["created_at"] >= start_date) &
+    (filtered_df["created_at"] >= start_date) & 
     (filtered_df["created_at"] <= end_date)
 ]
 
@@ -104,28 +102,13 @@ total_femmes = (filtered_df["sexe"] == "Femme").sum()
 total_hommes = (filtered_df["sexe"] == "Homme").sum()
 
 with kpi_col1:
-    st.markdown(f"""
-    <div style="padding: 20px; border-radius: 10px; background-color: #F0F0F0; text-align: center;">
-        <h4 style="color: #4A4A4A;">👥 Nombre Total de Contacts</h4>
-        <h2 style="color: #6A5ACD;">{total_contacts}</h2>
-    </div>
-    """, unsafe_allow_html=True)
+    st.metric(label="👥 Nombre Total de Contacts", value=total_contacts)
 
 with kpi_col2:
-    st.markdown(f"""
-    <div style="padding: 20px; border-radius: 10px; background-color: #F0F0F0; text-align: center;">
-        <h4 style="color: #4A4A4A;">♀️ Nombre de Femmes</h4>
-        <h2 style="color: #E91E63;">{total_femmes}</h2>
-    </div>
-    """, unsafe_allow_html=True)
+    st.metric(label="♀️ Nombre de Femmes", value=total_femmes)
 
 with kpi_col3:
-    st.markdown(f"""
-    <div style="padding: 20px; border-radius: 10px; background-color: #F0F0F0; text-align: center;">
-        <h4 style="color: #4A4A4A;">♂️ Nombre d'Hommes</h4>
-        <h2 style="color: #2196F3;">{total_hommes}</h2>
-    </div>
-    """, unsafe_allow_html=True)
+    st.metric(label="♂️ Nombre d'Hommes", value=total_hommes)
 
 # ---- 8) Graphiques: Pie & Bar ----
 col_pie, col_bar = st.columns(2)
@@ -133,57 +116,24 @@ col_pie, col_bar = st.columns(2)
 with col_pie:
     st.subheader("🧑‍🤝‍🧑 Répartition des Utilisateurs par Sexe")
     sexe_counts_filtered = filtered_df["sexe"].value_counts()
-    fig_pie = go.Figure(
-        go.Pie(
-            labels=sexe_counts_filtered.index,
-            values=sexe_counts_filtered.values,
-            textinfo="percent+label",
-            hole=0.4
-        )
-    )
+    fig_pie = go.Figure(go.Pie(labels=sexe_counts_filtered.index, values=sexe_counts_filtered.values))
     st.plotly_chart(fig_pie, use_container_width=True)
 
 with col_bar:
     st.subheader("🏙️ Répartition des Utilisateurs par Ville")
     ville_counts_filtered = filtered_df["ville"].value_counts()
-    fig_bar = go.Figure(
-        go.Bar(
-            x=ville_counts_filtered.index,
-            y=ville_counts_filtered.values
-        )
-    )
+    fig_bar = go.Figure(go.Bar(x=ville_counts_filtered.index, y=ville_counts_filtered.values))
     st.plotly_chart(fig_bar, use_container_width=True)
 
 # ---- 9) Line Chart - Évolution des Inscriptions ----
 st.subheader("📈 Évolution des Inscriptions")
-
 if not filtered_df.empty:
     if "id" in filtered_df.columns:
-        monthly_counts = (
-            filtered_df
-            .resample("M", on="created_at")["id"]
-            .count()
-            .rename("Nombre d’inscriptions")
-        )
+        monthly_counts = filtered_df.resample("M", on="created_at")["id"].count()
     else:
-        monthly_counts = (
-            filtered_df
-            .resample("M", on="created_at")
-            .size()
-            .rename("Nombre d’inscriptions")
-        )
+        monthly_counts = filtered_df.resample("M", on="created_at").size()
 
-    fig_line = go.Figure(
-        go.Scatter(
-            x=monthly_counts.index,
-            y=monthly_counts.values,
-            mode="lines+markers"
-        )
-    )
-    fig_line.update_layout(
-        xaxis_title="Date",
-        yaxis_title="Nombre d’inscriptions"
-    )
+    fig_line = go.Figure(go.Scatter(x=monthly_counts.index, y=monthly_counts.values, mode="lines+markers"))
     st.plotly_chart(fig_line, use_container_width=True)
 else:
     st.info("Aucune donnée à afficher pour la période/les filtres sélectionnés.")
