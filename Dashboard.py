@@ -14,11 +14,15 @@ st.set_page_config(
 @st.cache_data
 def load_data():
     try:
-        # 1) Appel de l'API
-        url = "https://baseecoleback.parcoursnum.net/api/candidats"  
-        response = requests.get(url)
-        response.raise_for_status()  
+        url = "https://baseecoleback.parcoursnum.net/api/candidats"
+        response = requests.get(url, headers={"Cache-Control": "no-cache"})
+        response.raise_for_status()
         data = response.json()
+        df = pd.DataFrame(data)
+        return df
+    except Exception as e:
+        st.error(f"Erreur lors du chargement des données : {e}")
+        return pd.DataFrame()
 
         # 2) Conversion en DataFrame
         df = pd.DataFrame(data)
